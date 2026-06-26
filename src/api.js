@@ -6,31 +6,21 @@
 
 const API_BASE = import.meta.env.VITE_API_URL || "";
 
-const ADMIN_TOKEN_KEY = "riverside_admin_token";
-
+// By design, admin login is NEVER persisted across page loads — every visit to
+// admin requires the password again, even on the same device/browser. This is
+// intentional (matches a deliberate product requirement), not an oversight.
+// These functions are deliberate no-ops kept only so App.jsx doesn't need to
+// change its calls to them.
 export function getStoredAdminToken() {
-  try {
-    return localStorage.getItem(ADMIN_TOKEN_KEY);
-  } catch (e) {
-    return null;
-  }
+  return null;
 }
 
-export function storeAdminToken(token) {
-  try {
-    localStorage.setItem(ADMIN_TOKEN_KEY, token);
-  } catch (e) {
-    // localStorage may be unavailable (private browsing, etc.) — admin will
-    // just need to log in again next visit, which is a tolerable fallback.
-  }
+export function storeAdminToken(_token) {
+  // intentionally does nothing — see comment above
 }
 
 export function clearStoredAdminToken() {
-  try {
-    localStorage.removeItem(ADMIN_TOKEN_KEY);
-  } catch (e) {
-    // see above
-  }
+  // intentionally does nothing — see comment above
 }
 
 class ApiError extends Error {
