@@ -252,11 +252,12 @@ export default function App() {
   // ---- admin auth ----
   function handleModeToggleClick() {
     if (mode === "admin") {
+      // Leaving admin always clears the token, so coming back in — even later
+      // in the same page session — requires the password again. This is a
+      // deliberate requirement: admin access should never be "remembered."
+      setAdminToken(null);
+      clearStoredAdminToken();
       setMode("customer");
-      return;
-    }
-    if (adminToken) {
-      setMode("admin");
       return;
     }
     setPasswordInput("");
