@@ -92,20 +92,31 @@ export default function App() {
   }, [loadDay]);
 
   // ---- load calendar month data whenever the visible month changes ----
+  const loadCalendarMonth = useCallback(async () => {
+    setCalendarLoading(true);
+    try {
+      const data = await api.getCalendarMonth(visibleMonth.getFullYear(), visibleMonth.getMonth() + 1);
+      setCalendarDays(data.days || {});
+    } catch (e) {
+      setCalendarDays({});
+    } finally {
+      setCalendarLoading(false);
+    }
+  }, [visibleMonth]);
+
   useEffect(() => {
     let cancelled = false;
-    setCalendarLoading(true);
-    api
-      .getCalendarMonth(visibleMonth.getFullYear(), visibleMonth.getMonth() + 1)
-      .then((data) => {
+    (async () => {
+      setCalendarLoading(true);
+      try {
+        const data = await api.getCalendarMonth(visibleMonth.getFullYear(), visibleMonth.getMonth() + 1);
         if (!cancelled) setCalendarDays(data.days || {});
-      })
-      .catch(() => {
+      } catch (e) {
         if (!cancelled) setCalendarDays({});
-      })
-      .finally(() => {
+      } finally {
         if (!cancelled) setCalendarLoading(false);
-      });
+      }
+    })();
     return () => {
       cancelled = true;
     };
@@ -403,6 +414,7 @@ export default function App() {
           visibleMonth={visibleMonth} setVisibleMonth={setVisibleMonth} selectDate={selectDate}
           calendarDays={calendarDays} calendarExpanded={calendarExpanded} setCalendarExpanded={setCalendarExpanded}
           branding={branding} setBranding={setBranding} adminToken={adminToken} onAuthFailure={handleAdminAuthFailure}
+          loadCalendarMonth={loadCalendarMonth} loadDay={loadDay}
         />
       )}
 
@@ -507,7 +519,8 @@ function CustomerView({
 }) {
   const canBook = fromMinute !== null && toMinute !== null;
   const fromOptions = dayData?.fromOptions || [];
-  const noAvailability = !dayLoading && fromOptions.length === 0;
+  const isBlocked = !!dayData?.blocked;
+  const noAvailability = !dayLoading && !isBlocked && fromOptions.length === 0;
 
   return (
     <div style={{ maxWidth: 980, margin: "0 auto", padding: "24px 20px 80px" }}>
@@ -537,6 +550,8 @@ function CustomerView({
 
             {dayLoading ? (
               <p style={{ fontSize: 13, color: "#8B8680" }}>Loading available times…</p>
+            ) : isBlocked ? (
+              <EmptyState text="This day is out of service and isn't available for booking." />
             ) : noAvailability ? (
               <EmptyState text="No times are available for this day. Try another day." />
             ) : (
@@ -578,7 +593,7 @@ function AdminView({
   current, shiftDay, goToday, windowForm, setWindowForm, handleSaveWindow, windowSaving, windowSaved, windowSaveError,
   dayData, dayLoading, onDeleteBooking,
   visibleMonth, setVisibleMonth, selectDate, calendarDays, calendarExpanded, setCalendarExpanded,
-  branding, setBranding, adminToken, onAuthFailure,
+  branding, setBranding, adminToken, onAuthFailure, loadCalendarMonth, loadDay,
 }) {
   const bookings = dayData?.bookings || [];
 
@@ -645,6 +660,8 @@ function AdminView({
               ))}
             </div>
           )}
+
+          <BlockedDatesPanel adminToken={adminToken} onAuthFailure={onAuthFailure} loadCalendarMonth={loadCalendarMonth} loadDay={loadDay} currentDateKey={dateKey(current)} />
         </div>
       </div>
 
@@ -684,6 +701,194 @@ function AdminBookingRow({ booking, interval, onDelete }) {
 }
 
 // ---------- security panel (admin password change) ----------
+
+// Groups a flat list of individual blocked dates into consecutive ranges for
+// display — e.g. ["2026-09-10","2026-09-11","2026-09-12"] becomes one row
+// "Sep 10 – Sep 12" instead of three separate rows, since they were almost
+// certainly blocked together as one action.
+function groupConsecutiveDates(blockedDates) {
+  if (blockedDates.length === 0) return [];
+  const sorted = [...blockedDates].sort((a, b) => a.date.localeCompare(b.date));
+  const groups = [];
+  let currentGroup = [sorted[0]];
+
+  for (let i = 1; i < sorted.length; i++) {
+    const prevDate = new Date(sorted[i - 1].date + "T00:00:00Z");
+    const curDate = new Date(sorted[i].date + "T00:00:00Z");
+    const dayDiff = (curDate - prevDate) / (24 * 60 * 60 * 1000);
+    const sameReason = sorted[i].reason === sorted[i - 1].reason;
+    if (dayDiff === 1 && sameReason) {
+      currentGroup.push(sorted[i]);
+    } else {
+      groups.push(currentGroup);
+      currentGroup = [sorted[i]];
+    }
+  }
+  groups.push(currentGroup);
+  return groups;
+}
+
+function formatRangeLabel(group) {
+  const fmt = (d) => new Date(d + "T00:00:00Z").toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" });
+  if (group.length === 1) return fmt(group[0].date);
+  return `${fmt(group[0].date)} – ${fmt(group[group.length - 1].date)}`;
+}
+
+function BlockedDatesPanel({ adminToken, onAuthFailure, loadCalendarMonth, loadDay, currentDateKey }) {
+  const [blockedDates, setBlockedDates] = useState([]);
+  const [listLoading, setListLoading] = useState(true);
+  const [listError, setListError] = useState("");
+
+  const [startDate, setStartDate] = useState("");
+  const [endDate, setEndDate] = useState("");
+  const [reason, setReason] = useState("");
+  const [submitting, setSubmitting] = useState(false);
+  const [formStatus, setFormStatus] = useState("");
+  const [formStatusIsError, setFormStatusIsError] = useState(false);
+
+  const [unblockingDates, setUnblockingDates] = useState(new Set());
+
+  const loadList = useCallback(async () => {
+    setListLoading(true);
+    setListError("");
+    try {
+      const data = await api.adminListBlockedDates(adminToken);
+      setBlockedDates(data.blockedDates || []);
+    } catch (e) {
+      if (e.status === 401) {
+        onAuthFailure();
+      } else {
+        setListError(e.message || "Couldn't load blocked dates.");
+      }
+    } finally {
+      setListLoading(false);
+    }
+  }, [adminToken, onAuthFailure]);
+
+  useEffect(() => {
+    loadList();
+  }, [loadList]);
+
+  async function handleBlock() {
+    setFormStatus("");
+    if (!startDate || !endDate) {
+      setFormStatus("Pick both a start and end date.");
+      setFormStatusIsError(true);
+      return;
+    }
+    if (startDate > endDate) {
+      setFormStatus("Start date must be on or before the end date.");
+      setFormStatusIsError(true);
+      return;
+    }
+    setSubmitting(true);
+    try {
+      await api.adminBlockDates(startDate, endDate, reason, adminToken);
+      setFormStatus("Days blocked.");
+      setFormStatusIsError(false);
+      setStartDate("");
+      setEndDate("");
+      setReason("");
+      await loadList();
+      await loadCalendarMonth();
+      if (loadDay) await loadDay();
+    } catch (e) {
+      if (e.status === 401) {
+        onAuthFailure();
+      } else {
+        setFormStatus(e.message || "Couldn't block those days.");
+        setFormStatusIsError(true);
+      }
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
+  async function handleUnblockGroup(group) {
+    const dates = group.map((g) => g.date);
+    setUnblockingDates((prev) => new Set([...prev, ...dates]));
+    try {
+      for (const d of dates) {
+        await api.adminUnblockDate(d, adminToken);
+      }
+      await loadList();
+      await loadCalendarMonth();
+      if (loadDay) await loadDay();
+    } catch (e) {
+      if (e.status === 401) onAuthFailure();
+    } finally {
+      setUnblockingDates((prev) => {
+        const next = new Set(prev);
+        dates.forEach((d) => next.delete(d));
+        return next;
+      });
+    }
+  }
+
+  const groups = groupConsecutiveDates(blockedDates);
+
+  return (
+    <div style={{ background: "#fff", border: "1px solid #E3DECF", borderRadius: 12, padding: 16, marginTop: 24 }}>
+      <h3 style={{ margin: "0 0 4px", fontSize: 14, fontWeight: 700, color: "#6b6657", textTransform: "uppercase", letterSpacing: "0.04em" }}>Block out days</h3>
+      <p style={{ fontSize: 12, color: "#8B8680", margin: "0 0 14px" }}>
+        Mark days as out of service — vacations, holidays, anything where customers shouldn't be able to book. Days with existing bookings can't be blocked; cancel those bookings first if needed.
+      </p>
+
+      <div className="gen-row" style={{ display: "flex", gap: 10, marginBottom: 12, flexWrap: "wrap" }}>
+        <div style={{ flex: "1 1 140px" }}>
+          <label style={{ fontSize: 11, color: "#8B8680", display: "block", marginBottom: 4 }}>Start date</label>
+          <input type="date" className="bk-input" value={startDate} onChange={(e) => setStartDate(e.target.value)} />
+        </div>
+        <div style={{ flex: "1 1 140px" }}>
+          <label style={{ fontSize: 11, color: "#8B8680", display: "block", marginBottom: 4 }}>End date</label>
+          <input type="date" className="bk-input" value={endDate} onChange={(e) => setEndDate(e.target.value)} />
+        </div>
+        <div style={{ flex: "1 1 160px" }}>
+          <label style={{ fontSize: 11, color: "#8B8680", display: "block", marginBottom: 4 }}>Reason (optional)</label>
+          <input type="text" className="bk-input" value={reason} onChange={(e) => setReason(e.target.value)} placeholder="e.g. Vacation" />
+        </div>
+      </div>
+
+      {formStatus && (
+        <p style={{ fontSize: 12, color: formStatusIsError ? "#A32D2D" : "#5C8A72", margin: "0 0 12px" }}>{formStatus}</p>
+      )}
+
+      <button className="bk-primary" onClick={handleBlock} disabled={submitting} style={{ marginBottom: 20 }}>
+        {submitting ? "Blocking…" : "Block these days"}
+      </button>
+
+      <h4 style={{ margin: "0 0 10px", fontSize: 12, fontWeight: 700, color: "#6b6657", textTransform: "uppercase", letterSpacing: "0.04em" }}>Currently blocked</h4>
+      {listLoading ? (
+        <p style={{ fontSize: 13, color: "#8B8680" }}>Loading…</p>
+      ) : listError ? (
+        <p style={{ fontSize: 12, color: "#A32D2D" }}>{listError}</p>
+      ) : groups.length === 0 ? (
+        <p style={{ fontSize: 13, color: "#8B8680" }}>No days are currently blocked.</p>
+      ) : (
+        <div>
+          {groups.map((group, idx) => {
+            const isUnblocking = group.some((g) => unblockingDates.has(g.date));
+            const includesCurrentDay = currentDateKey && group.some((g) => g.date === currentDateKey);
+            return (
+              <div key={idx} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10, padding: "10px 12px", background: "#F5F3EE", borderRadius: 8, marginBottom: 8 }}>
+                <div>
+                  <div style={{ fontSize: 13, fontWeight: 700 }}>
+                    {formatRangeLabel(group)}
+                    {includesCurrentDay && <span style={{ fontSize: 11, color: "#8B8680", fontWeight: 500 }}> (currently viewing)</span>}
+                  </div>
+                  {group[0].reason && <div style={{ fontSize: 12, color: "#6b6657", marginTop: 2 }}>{group[0].reason}</div>}
+                </div>
+                <button className="bk-ghost" style={{ padding: "6px 12px", fontSize: 12, flexShrink: 0 }} onClick={() => handleUnblockGroup(group)} disabled={isUnblocking}>
+                  {isUnblocking ? "Unblocking…" : "Unblock"}
+                </button>
+              </div>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+}
 
 function SecurityPanel({ adminToken, onAuthFailure }) {
   const [newPw, setNewPw] = useState("");
@@ -890,13 +1095,24 @@ function MonthCalendar({ visibleMonth, setVisibleMonth, selectedDate, onSelectDa
           if (d === null) return <div key={idx} />;
           const cellDate = new Date(year, month, d);
           const cellKey = dateKey(cellDate);
-          const fraction = calendarDays[cellKey];
-          const colors = loadColor(fraction === undefined ? null : fraction);
+          const dayInfo = calendarDays[cellKey];
+          const isBlocked = !!(dayInfo && dayInfo.blocked);
+          const fraction = dayInfo ? dayInfo.fraction : undefined;
+          const colors = loadColor(fraction === undefined ? null : fraction, isBlocked);
           const isToday = cellKey === todayKey;
           const isSelected = cellKey === selectedKey;
           return (
-            <button key={idx} onClick={() => onSelectDate(cellDate)} title={colors.label}
-              style={{ aspectRatio: "1", border: "none", borderRadius: 6, cursor: "pointer", background: colors.bg, color: colors.fg, fontSize: 12, fontWeight: isToday ? 800 : 600, outline: isSelected ? "2px solid #1A2B3D" : isToday ? "1.5px solid #1A2B3D" : "none", outlineOffset: "1px", display: "flex", alignItems: "center", justifyContent: "center" }}>
+            <button
+              key={idx}
+              onClick={() => onSelectDate(cellDate)}
+              title={colors.label}
+              style={{
+                aspectRatio: "1", border: "none", borderRadius: 6, cursor: "pointer",
+                background: colors.bg, color: colors.fg, fontSize: 12, fontWeight: isToday ? 800 : 600,
+                outline: isSelected ? "2px solid #1A2B3D" : isToday ? "1.5px solid #1A2B3D" : "none",
+                outlineOffset: "1px", display: "flex", alignItems: "center", justifyContent: "center",
+                opacity: isBlocked ? 0.85 : 1,
+              }}>
               {d}
             </button>
           );
@@ -907,6 +1123,7 @@ function MonthCalendar({ visibleMonth, setVisibleMonth, selectedDate, onSelectDa
         <LegendDot color="#FBE9C9" label="Partial" />
         <LegendDot color="#F4DCD6" label="Full" />
         <LegendDot color="#EDEAE3" label="Unset" />
+        <LegendDot color="#3A3530" label="Out of Service" />
       </div>
     </div>
   );

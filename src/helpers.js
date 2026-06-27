@@ -37,7 +37,8 @@ export function serviceFor(id) {
   return SERVICES.find((s) => s.id === id) || SERVICES[0];
 }
 
-export function loadColor(fraction) {
+export function loadColor(fraction, blocked) {
+  if (blocked) return { bg: "#3A3530", fg: "#E8E4DC", label: "Out of Service" };
   if (fraction === null || fraction === undefined) return { bg: "#EDEAE3", fg: "#A8A39A", label: "No availability set" };
   if (fraction >= 0.8) return { bg: "#F4DCD6", fg: "#A32D2D", label: "Nearly full" };
   if (fraction >= 0.4) return { bg: "#FBE9C9", fg: "#9C6B1F", label: "Partially booked" };
