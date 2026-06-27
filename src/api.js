@@ -84,6 +84,12 @@ export const api = {
     request("/api/admin/password", { method: "PUT", body: { newPassword }, token }),
   adminSetBranding: (name, logo, token) =>
     request("/api/admin/branding", { method: "PUT", body: { name, logo }, token }),
+
+  adminListBlockedDates: (token) => request("/api/admin/blocked-dates", { token }),
+  adminBlockDates: (startDate, endDate, reason, token) =>
+    request("/api/admin/blocked-dates", { method: "POST", body: { startDate, endDate, reason }, token }),
+  adminUnblockDate: (date, token) =>
+    request(`/api/admin/blocked-dates/${date}`, { method: "DELETE", token }),
 };
 
 export { ApiError };
