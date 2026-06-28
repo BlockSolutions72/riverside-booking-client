@@ -365,6 +365,13 @@ export default function App() {
         @media (max-width: 380px) { .mode-label { display: none; } }
         @keyframes pinPulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.35; } }
         .pin-pulse { animation: pinPulse 1s ease-in-out infinite; }
+
+        .modal-overlay { height: 100vh; }
+        .modal-box { max-height: calc(100vh - 32px); }
+        @supports (height: 100dvh) {
+          .modal-overlay { height: 100dvh; }
+          .modal-box { max-height: calc(100dvh - 32px); }
+        }
       `}</style>
 
       <div style={{ borderBottom: "1px solid #E3DECF", background: "#1A2B3D" }}>
@@ -1164,9 +1171,40 @@ function EmptyState({ text }) {
 }
 
 function Modal({ children, onClose }) {
+  // Lock background scroll while a modal is open — on mobile, without this, touch
+  // scrolling can get captured by the page behind the modal instead of the modal's
+  // own scroll container, making the bottom of the modal unreachable.
+  useEffect(() => {
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    return () => {
+      document.body.style.overflow = previousOverflow;
+    };
+  }, []);
+
   return (
-    <div style={{ position: "fixed", top: 0, left: 0, right: 0, bottom: 0, minHeight: "100vh", background: "rgba(26,43,61,0.45)", display: "flex", alignItems: "center", justifyContent: "center", padding: 20, zIndex: 50 }} onClick={onClose}>
-      <div onClick={(e) => e.stopPropagation()} style={{ background: "#fff", borderRadius: 14, padding: 22, maxWidth: 420, width: "100%", maxHeight: "90vh", overflowY: "auto" }}>
+    <div
+      className="modal-overlay"
+      style={{
+        position: "fixed", top: 0, left: 0, right: 0, bottom: 0,
+        background: "rgba(26,43,61,0.45)",
+        display: "flex", alignItems: "center", justifyContent: "center",
+        padding: 16, zIndex: 50,
+        overscrollBehavior: "contain",
+      }}
+      onClick={onClose}
+    >
+      <div
+        className="modal-box"
+        onClick={(e) => e.stopPropagation()}
+        style={{
+          background: "#fff", borderRadius: 14, padding: 22,
+          maxWidth: 420, width: "100%",
+          overflowY: "auto",
+          WebkitOverflowScrolling: "touch",
+          overscrollBehavior: "contain",
+        }}
+      >
         {children}
       </div>
     </div>
