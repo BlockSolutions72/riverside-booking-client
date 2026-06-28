@@ -344,7 +344,7 @@ export default function App() {
     <div style={{ fontFamily: "'Inter', ui-sans-serif, -apple-system, 'Segoe UI', Roboto, sans-serif", background: "#F5F3EE", color: "#1A2B3D", minHeight: "100vh", position: "relative" }}>
       <style>{`
         * { box-sizing: border-box; }
-        .bk-input { font-family: inherit; border: 1px solid #D7D2C5; border-radius: 8px; padding: 10px 12px; font-size: 15px; background: #fff; color: #1A2B3D; width: 100%; }
+        .bk-input { font-family: inherit; border: 1px solid #D7D2C5; border-radius: 8px; padding: 10px 12px; font-size: 15px; background: #fff; color: #1A2B3D; width: 100%; min-width: 0; max-width: 100%; box-sizing: border-box; }
         .bk-input:focus { outline: none; border-color: #1A2B3D; box-shadow: 0 0 0 2px rgba(26,43,61,0.12); }
         .bk-input:disabled { background: #F0EDE3; color: #A8A39A; cursor: not-allowed; }
         .bk-primary { background: #E8702A; color: #fff; border: none; border-radius: 10px; padding: 13px 20px; font-size: 15px; font-weight: 700; cursor: pointer; }
@@ -354,6 +354,14 @@ export default function App() {
         .bk-ghost:hover { background: #EAE7DD; }
         .bk-icon-btn { display: flex; align-items: center; justify-content: center; border: none; background: transparent; cursor: pointer; border-radius: 8px; color: #6b6657; padding: 8px; }
         .bk-icon-btn:hover { background: rgba(0,0,0,0.06); }
+        /* Flex items default to min-width:auto, which lets native date/time inputs
+           (whose intrinsic content width includes their built-in picker UI) force
+           their column wider than intended — breaking alignment with sibling fields
+           and overflowing the panel on mobile Safari specifically. min-width:0 lets
+           them actually shrink to the flex-basis like every other field does. */
+        .gen-row > div { min-width: 0; }
+        .gen-row input[type="date"],
+        .gen-row input[type="time"] { width: 100%; min-width: 0; max-width: 100%; }
         @media (max-width: 640px) {
           .from-to-row { flex-direction: column !important; }
           .gen-row { flex-direction: column !important; }
