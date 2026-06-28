@@ -372,6 +372,15 @@ export default function App() {
           .modal-overlay { height: 100dvh; }
           .modal-box { max-height: calc(100dvh - 32px); }
         }
+
+        /* Adds the device's actual bottom safe-area inset (e.g. Safari's floating
+           toolbar / home indicator area on iPhone) on top of the base padding, so
+           buttons and content at the bottom of the page are never rendered behind
+           browser UI. env() resolves to 0 on browsers that don't support it, so
+           this is a no-op fallback rather than breaking anything. */
+        .page-container {
+          padding: 24px 20px calc(80px + env(safe-area-inset-bottom, 0px));
+        }
       `}</style>
 
       <div style={{ borderBottom: "1px solid #E3DECF", background: "#1A2B3D" }}>
@@ -530,7 +539,7 @@ function CustomerView({
   const noAvailability = !dayLoading && !isBlocked && fromOptions.length === 0;
 
   return (
-    <div style={{ maxWidth: 980, margin: "0 auto", padding: "24px 20px 80px" }}>
+    <div className="page-container" style={{ maxWidth: 980, margin: "0 auto" }}>
       <button className="calendar-toggle-btn" onClick={() => setCalendarExpanded((v) => !v)}
         style={{ display: "none", alignItems: "center", justifyContent: "space-between", width: "100%", background: "#fff", border: "1px solid #E3DECF", borderRadius: 10, padding: "10px 14px", marginBottom: 12, fontSize: 13, fontWeight: 600, color: "#1A2B3D", cursor: "pointer" }}>
         <span style={{ display: "flex", alignItems: "center", gap: 8 }}><CalendarIcon size={15} />{formatDayLabel(current)}</span>
@@ -605,7 +614,7 @@ function AdminView({
   const bookings = dayData?.bookings || [];
 
   return (
-    <div style={{ maxWidth: 980, margin: "0 auto", padding: "24px 20px 80px" }}>
+    <div className="page-container" style={{ maxWidth: 980, margin: "0 auto" }}>
       <button className="calendar-toggle-btn" onClick={() => setCalendarExpanded((v) => !v)}
         style={{ display: "none", alignItems: "center", justifyContent: "space-between", width: "100%", background: "#fff", border: "1px solid #E3DECF", borderRadius: 10, padding: "10px 14px", marginBottom: 12, fontSize: 13, fontWeight: 600, color: "#1A2B3D", cursor: "pointer" }}>
         <span style={{ display: "flex", alignItems: "center", gap: 8 }}><CalendarIcon size={15} />{formatDayLabel(current)}</span>
