@@ -358,10 +358,19 @@ export default function App() {
            (whose intrinsic content width includes their built-in picker UI) force
            their column wider than intended — breaking alignment with sibling fields
            and overflowing the panel on mobile Safari specifically. min-width:0 lets
-           them actually shrink to the flex-basis like every other field does. */
+           them actually shrink to the flex-basis like every other field does.
+           The columns themselves also now use flex:1 1 0 (equal distribution,
+           ignoring each field's natural content size) rather than mismatched
+           flex-basis pixel values, since WebKit's native time/date control can
+           still assert its own intrinsic width against a content-derived basis
+           even with min-width:0 in place — flex-basis:0 removes that fight
+           entirely by never deriving a starting size from content at all. */
         .gen-row > div { min-width: 0; }
         .gen-row input[type="date"],
-        .gen-row input[type="time"] { width: 100%; min-width: 0; max-width: 100%; }
+        .gen-row input[type="time"] {
+          width: 100%; min-width: 0; max-width: 100%; box-sizing: border-box;
+          -webkit-appearance: none; appearance: none;
+        }
         @media (max-width: 640px) {
           .from-to-row { flex-direction: column !important; }
           .gen-row { flex-direction: column !important; }
@@ -644,15 +653,15 @@ function AdminView({
             ) : (
               <>
                 <div className="gen-row" style={{ display: "flex", gap: 10, marginBottom: 12, flexWrap: "wrap" }}>
-                  <div style={{ flex: "1 1 110px" }}>
+                  <div style={{ flex: "1 1 0", minWidth: 90 }}>
                     <label style={{ fontSize: 11, color: "#8B8680", display: "block", marginBottom: 4 }}>Open from</label>
                     <input type="time" className="bk-input" value={windowForm.window_start} onChange={(e) => setWindowForm({ ...windowForm, window_start: e.target.value })} />
                   </div>
-                  <div style={{ flex: "1 1 110px" }}>
+                  <div style={{ flex: "1 1 0", minWidth: 90 }}>
                     <label style={{ fontSize: 11, color: "#8B8680", display: "block", marginBottom: 4 }}>Open until</label>
                     <input type="time" className="bk-input" value={windowForm.window_end} onChange={(e) => setWindowForm({ ...windowForm, window_end: e.target.value })} />
                   </div>
-                  <div style={{ flex: "1 1 100px" }}>
+                  <div style={{ flex: "1 1 0", minWidth: 90 }}>
                     <label style={{ fontSize: 11, color: "#8B8680", display: "block", marginBottom: 4 }}>Slot Interval (min)</label>
                     <input type="number" min="0" step="5" className="bk-input" value={windowForm.interval_minutes} onChange={(e) => setWindowForm({ ...windowForm, interval_minutes: e.target.value })} />
                   </div>
@@ -859,15 +868,15 @@ function BlockedDatesPanel({ adminToken, onAuthFailure, loadCalendarMonth, loadD
       </p>
 
       <div className="gen-row" style={{ display: "flex", gap: 10, marginBottom: 12, flexWrap: "wrap" }}>
-        <div style={{ flex: "1 1 140px" }}>
+        <div style={{ flex: "1 1 0", minWidth: 120 }}>
           <label style={{ fontSize: 11, color: "#8B8680", display: "block", marginBottom: 4 }}>Start date</label>
           <input type="date" className="bk-input" value={startDate} onChange={(e) => setStartDate(e.target.value)} />
         </div>
-        <div style={{ flex: "1 1 140px" }}>
+        <div style={{ flex: "1 1 0", minWidth: 120 }}>
           <label style={{ fontSize: 11, color: "#8B8680", display: "block", marginBottom: 4 }}>End date</label>
           <input type="date" className="bk-input" value={endDate} onChange={(e) => setEndDate(e.target.value)} />
         </div>
-        <div style={{ flex: "1 1 160px" }}>
+        <div style={{ flex: "1 1 0", minWidth: 120 }}>
           <label style={{ fontSize: 11, color: "#8B8680", display: "block", marginBottom: 4 }}>Reason (optional)</label>
           <input type="text" className="bk-input" value={reason} onChange={(e) => setReason(e.target.value)} placeholder="e.g. Vacation" />
         </div>
