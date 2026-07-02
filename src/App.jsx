@@ -176,11 +176,19 @@ export default function App() {
 
   // ---- customer booking flow ----
   // ---- booking form validation ----
+  function formatPhone(value) {
+    // Strip everything except digits, cap at 10
+    const digits = value.replace(/\D/g, "").slice(0, 10);
+    if (digits.length === 0) return "";
+    if (digits.length <= 3) return `(${digits}`;
+    if (digits.length <= 6) return `(${digits.slice(0, 3)}) ${digits.slice(3)}`;
+    return `(${digits.slice(0, 3)}) ${digits.slice(3, 6)}-${digits.slice(6)}`;
+  }
+
   function validatePhone(value) {
     if (!value.trim()) return ""; // empty is ok — the "at least one" check handles it
     const digits = value.replace(/\D/g, "");
-    if (digits.length < 7) return "Phone number is too short (at least 7 digits).";
-    if (digits.length > 15) return "Phone number is too long (max 15 digits).";
+    if (digits.length < 10) return "Please enter a complete 10-digit US phone number.";
     return "";
   }
 
@@ -514,11 +522,12 @@ export default function App() {
           <label style={{ fontSize: 12, fontWeight: 600, color: "#6b6657", display: "block", marginBottom: 4 }}>Phone</label>
           <input
             className="bk-input"
-            placeholder="555-0100"
+            placeholder="(555) 010-0100"
             value={bookingForm.phone}
             onChange={(e) => {
-              setBookingForm({ ...bookingForm, phone: e.target.value });
-              setPhoneError(validatePhone(e.target.value));
+              const formatted = formatPhone(e.target.value);
+              setBookingForm({ ...bookingForm, phone: formatted });
+              setPhoneError(validatePhone(formatted));
             }}
             onBlur={(e) => setPhoneError(validatePhone(e.target.value))}
             style={{ marginBottom: phoneError ? 4 : 12, borderColor: phoneError ? "#A32D2D" : undefined }}
