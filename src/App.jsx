@@ -518,7 +518,7 @@ export default function App() {
             value={bookingForm.phone}
             onChange={(e) => {
               setBookingForm({ ...bookingForm, phone: e.target.value });
-              if (phoneError) setPhoneError(validatePhone(e.target.value));
+              setPhoneError(validatePhone(e.target.value));
             }}
             onBlur={(e) => setPhoneError(validatePhone(e.target.value))}
             style={{ marginBottom: phoneError ? 4 : 12, borderColor: phoneError ? "#A32D2D" : undefined }}
@@ -533,7 +533,7 @@ export default function App() {
             value={bookingForm.email}
             onChange={(e) => {
               setBookingForm({ ...bookingForm, email: e.target.value });
-              if (emailError) setEmailError(validateEmail(e.target.value));
+              setEmailError(validateEmail(e.target.value));
             }}
             onBlur={(e) => setEmailError(validateEmail(e.target.value))}
             style={{ marginBottom: emailError ? 4 : 0, borderColor: emailError ? "#A32D2D" : undefined }}
