@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback, useRef } from "react";
 import {
   Plus, Trash2, ChevronLeft, ChevronRight, X, Check, Calendar as CalendarIcon,
-  Settings, User, Car, Clock, MapPin, LogOut,
+  Settings, User, Car, Clock, MapPin, LogOut, Share2, Copy, CheckCheck,
 } from "lucide-react";
 import { api, getStoredAdminToken, storeAdminToken, clearStoredAdminToken } from "./api";
 import {
@@ -16,6 +16,7 @@ export default function App() {
   const [passwordInput, setPasswordInput] = useState("");
   const [passwordError, setPasswordError] = useState("");
   const [loggingIn, setLoggingIn] = useState(false);
+  const [shareModalOpen, setShareModalOpen] = useState(false);
 
   const [current, setCurrent] = useState(() => new Date());
   const [visibleMonth, setVisibleMonth] = useState(() => {
@@ -45,6 +46,8 @@ export default function App() {
   const [bookingForm, setBookingForm] = useState({ name: "", phone: "", email: "", address: "", notes: "" });
   const [bookingSubmitting, setBookingSubmitting] = useState(false);
   const [bookingSubmitError, setBookingSubmitError] = useState("");
+  const [phoneError, setPhoneError] = useState("");
+  const [emailError, setEmailError] = useState("");
   const [locating, setLocating] = useState(false);
   const [locateError, setLocateError] = useState("");
   const [confirmedBooking, setConfirmedBooking] = useState(null);
@@ -172,9 +175,28 @@ export default function App() {
   }
 
   // ---- customer booking flow ----
+  // ---- booking form validation ----
+  function validatePhone(value) {
+    if (!value.trim()) return ""; // empty is ok — the "at least one" check handles it
+    const digits = value.replace(/\D/g, "");
+    if (digits.length < 7) return "Phone number is too short (at least 7 digits).";
+    if (digits.length > 15) return "Phone number is too long (max 15 digits).";
+    return "";
+  }
+
+  function validateEmail(value) {
+    if (!value.trim()) return ""; // empty is ok — the "at least one" check handles it
+    // Standard email regex: something@something.something
+    const emailRe = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/;
+    if (!emailRe.test(value.trim())) return "Please enter a valid email address (e.g. name@example.com).";
+    return "";
+  }
+
   function openBookingForm() {
     setBookingForm({ name: "", phone: "", email: "", address: "", notes: "" });
     setBookingSubmitError("");
+    setPhoneError("");
+    setEmailError("");
     setLocateError("");
     setBookingFormOpen(true);
   }
@@ -184,6 +206,13 @@ export default function App() {
     const name = bookingForm.name.trim();
     if (!name) return;
     if (!bookingForm.phone.trim() && !bookingForm.email.trim()) return;
+
+    // Run validation once more on submit in case the user never blurred the fields
+    const pErr = validatePhone(bookingForm.phone);
+    const eErr = validateEmail(bookingForm.email);
+    setPhoneError(pErr);
+    setEmailError(eErr);
+    if (pErr || eErr) return;
 
     setBookingSubmitting(true);
     setBookingSubmitError("");
@@ -413,6 +442,15 @@ export default function App() {
             <span style={{ fontWeight: 700, fontSize: 15, letterSpacing: "0.01em" }}>{branding.name}</span>
           </div>
           <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+            <button
+              onClick={() => setShareModalOpen(true)}
+              className="bk-icon-btn"
+              style={{ color: "#fff" }}
+              aria-label="Share this site"
+              title="Share"
+            >
+              <Share2 size={16} />
+            </button>
             {mode === "admin" && (
               <button onClick={handleAdminLogout} className="bk-icon-btn" style={{ color: "#fff" }} aria-label="Log out" title="Log out">
                 <LogOut size={16} />
@@ -474,9 +512,34 @@ export default function App() {
           <label style={{ fontSize: 12, fontWeight: 600, color: "#6b6657", display: "block", marginBottom: 4 }}>Your name</label>
           <input className="bk-input" placeholder="Jane Smith" value={bookingForm.name} onChange={(e) => setBookingForm({ ...bookingForm, name: e.target.value })} style={{ marginBottom: 12 }} autoFocus disabled={bookingSubmitting} />
           <label style={{ fontSize: 12, fontWeight: 600, color: "#6b6657", display: "block", marginBottom: 4 }}>Phone</label>
-          <input className="bk-input" placeholder="555-0100" value={bookingForm.phone} onChange={(e) => setBookingForm({ ...bookingForm, phone: e.target.value })} style={{ marginBottom: 12 }} disabled={bookingSubmitting} />
+          <input
+            className="bk-input"
+            placeholder="555-0100"
+            value={bookingForm.phone}
+            onChange={(e) => {
+              setBookingForm({ ...bookingForm, phone: e.target.value });
+              if (phoneError) setPhoneError(validatePhone(e.target.value));
+            }}
+            onBlur={(e) => setPhoneError(validatePhone(e.target.value))}
+            style={{ marginBottom: phoneError ? 4 : 12, borderColor: phoneError ? "#A32D2D" : undefined }}
+            disabled={bookingSubmitting}
+          />
+          {phoneError && <p style={{ fontSize: 12, color: "#A32D2D", margin: "0 0 12px" }}>{phoneError}</p>}
           <label style={{ fontSize: 12, fontWeight: 600, color: "#6b6657", display: "block", marginBottom: 4 }}>Email</label>
-          <input type="email" className="bk-input" placeholder="jane@example.com" value={bookingForm.email} onChange={(e) => setBookingForm({ ...bookingForm, email: e.target.value })} style={{ marginBottom: 4 }} disabled={bookingSubmitting} />
+          <input
+            type="email"
+            className="bk-input"
+            placeholder="jane@example.com"
+            value={bookingForm.email}
+            onChange={(e) => {
+              setBookingForm({ ...bookingForm, email: e.target.value });
+              if (emailError) setEmailError(validateEmail(e.target.value));
+            }}
+            onBlur={(e) => setEmailError(validateEmail(e.target.value))}
+            style={{ marginBottom: emailError ? 4 : 0, borderColor: emailError ? "#A32D2D" : undefined }}
+            disabled={bookingSubmitting}
+          />
+          {emailError && <p style={{ fontSize: 12, color: "#A32D2D", margin: "0 0 4px" }}>{emailError}</p>}
           <p style={{ fontSize: 11, color: "#8B8680", margin: "0 0 12px" }}>We'll send your confirmation to whichever of phone or email you provide.</p>
           <label style={{ fontSize: 12, fontWeight: 600, color: "#6b6657", display: "block", marginBottom: 4 }}>Location</label>
           <div style={{ display: "flex", gap: 8, alignItems: "flex-start", marginBottom: 4 }}>
@@ -500,7 +563,9 @@ export default function App() {
           {bookingForm.name.trim() && !bookingForm.phone.trim() && !bookingForm.email.trim() && (
             <p style={{ fontSize: 12, color: "#B5762E", margin: "0 0 10px" }}>Please add a phone number or email so we can send your confirmation.</p>
           )}
-          <button className="bk-primary" style={{ width: "100%" }} disabled={!bookingForm.name.trim() || (!bookingForm.phone.trim() && !bookingForm.email.trim()) || bookingSubmitting} onClick={submitBooking}>
+          <button className="bk-primary" style={{ width: "100%" }}
+            disabled={!bookingForm.name.trim() || (!bookingForm.phone.trim() && !bookingForm.email.trim()) || !!phoneError || !!emailError || bookingSubmitting}
+            onClick={submitBooking}>
             {bookingSubmitting ? "Booking…" : "Confirm booking"}
           </button>
         </Modal>
@@ -539,9 +604,118 @@ export default function App() {
           </button>
         </Modal>
       )}
+
+      {shareModalOpen && (
+        <ShareModal onClose={() => setShareModalOpen(false)} branding={branding} />
+      )}
     </div>
   );
 }
+
+// ---------- share modal ----------
+
+function ShareModal({ onClose, branding }) {
+  const siteUrl = window.location.origin;
+  const [copied, setCopied] = useState(false);
+  const [shareError, setShareError] = useState("");
+
+  async function handleNativeShare() {
+    setShareError("");
+    if (navigator.share) {
+      try {
+        await navigator.share({
+          title: branding.name,
+          text: `Book an appointment with ${branding.name}`,
+          url: siteUrl,
+        });
+      } catch (e) {
+        // User cancelled the share sheet — this is a normal action, not an error worth displaying
+        if (e.name !== "AbortError") {
+          setShareError("Sharing didn't complete. You can copy the link below instead.");
+        }
+      }
+    } else {
+      // Browser doesn't support Web Share API — shouldn't reach here since we only
+      // show this button when supported, but handle gracefully just in case
+      setShareError("Native sharing isn't available in this browser. Copy the link below instead.");
+    }
+  }
+
+  async function handleCopy() {
+    try {
+      await navigator.clipboard.writeText(siteUrl);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2500);
+    } catch (e) {
+      // Clipboard API blocked (e.g. non-HTTPS or restricted browser) — select the
+      // text in the input as a fallback so the user can copy it manually
+      const input = document.getElementById("share-url-input");
+      if (input) { input.select(); }
+      setShareError("Couldn't copy automatically — select and copy the link above manually.");
+    }
+  }
+
+  const nativeShareSupported = !!navigator.share;
+
+  return (
+    <Modal onClose={onClose}>
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 14 }}>
+        <h2 style={{ margin: 0, fontSize: 18, fontWeight: 700 }}>Share this site</h2>
+        <button className="bk-icon-btn" onClick={onClose} aria-label="Close"><X size={18} /></button>
+      </div>
+
+      <p style={{ fontSize: 13, color: "#6b6657", margin: "0 0 16px", lineHeight: 1.5 }}>
+        This will pass along the site address to a recipient so they can book an appointment. Use the button below to share via your phone's apps, or copy the link and paste it into an email, text, or message yourself.
+      </p>
+
+      <label style={{ fontSize: 12, fontWeight: 600, color: "#6b6657", display: "block", marginBottom: 6 }}>Site link</label>
+      <div style={{ display: "flex", gap: 8, marginBottom: 16 }}>
+        <input
+          id="share-url-input"
+          className="bk-input"
+          readOnly
+          value={siteUrl}
+          onFocus={(e) => e.target.select()}
+          style={{ fontFamily: "ui-monospace, SFMono-Regular, Menlo, monospace", fontSize: 13, cursor: "text" }}
+        />
+        <button
+          onClick={handleCopy}
+          title={copied ? "Copied!" : "Copy link"}
+          aria-label={copied ? "Copied!" : "Copy link"}
+          style={{
+            flexShrink: 0, width: 42, height: 42, display: "flex", alignItems: "center",
+            justifyContent: "center", borderRadius: 8, border: "1px solid #D7D2C5",
+            background: copied ? "#DEEDE3" : "#fff", color: copied ? "#3D7A52" : "#1A2B3D",
+            cursor: "pointer", transition: "all 0.2s",
+          }}
+        >
+          {copied ? <CheckCheck size={17} /> : <Copy size={17} />}
+        </button>
+      </div>
+
+      {copied && (
+        <p style={{ fontSize: 12, color: "#5C8A72", margin: "-8px 0 12px", fontWeight: 600 }}>Link copied to clipboard!</p>
+      )}
+
+      {shareError && (
+        <p style={{ fontSize: 12, color: "#B5762E", margin: "0 0 12px" }}>{shareError}</p>
+      )}
+
+      {nativeShareSupported && (
+        <button className="bk-primary" onClick={handleNativeShare} style={{ width: "100%", display: "flex", alignItems: "center", justifyContent: "center", gap: 8 }}>
+          <Share2 size={16} />
+          Share via your apps
+        </button>
+      )}
+      {!nativeShareSupported && (
+        <p style={{ fontSize: 12, color: "#8B8680", textAlign: "center", margin: 0 }}>
+          Copy the link above and paste it into an email, text message, or any app you'd like.
+        </p>
+      )}
+    </Modal>
+  );
+}
+
 
 // ---------- customer view ----------
 
