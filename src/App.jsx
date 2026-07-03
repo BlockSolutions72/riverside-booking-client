@@ -1202,8 +1202,32 @@ function ReportsPanel({ adminToken, onAuthFailure, branding }) {
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, ws, "Bookings");
     const filename = `${branding.name.replace(/\s+/g, "_")}_Bookings_${fromDate}_to_${toDate}.xlsx`;
-    XLSX.writeFile(wb, filename);
-    setStatus(`Excel file downloaded: ${filename}`);
+
+    // Generate as a Uint8Array blob instead of using XLSX.writeFile() directly.
+    // XLSX.writeFile() uses DOM anchor-click navigation which iOS Safari doesn't
+    // handle properly (ends up navigating to the .com site). Creating a blob and
+    // using navigator.share() matches exactly how jsPDF works on iOS — opens the
+    // native share sheet so the user can send via Gmail, WhatsApp, Files, etc.
+    const wbArray = XLSX.write(wb, { bookType: "xlsx", type: "array" });
+    const blob = new Blob([wbArray], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" });
+
+    if (navigator.share && navigator.canShare && navigator.canShare({ files: [new File([blob], filename, { type: blob.type })] })) {
+      // iOS Safari / modern mobile — use native share sheet (same as PDF)
+      const file = new File([blob], filename, { type: blob.type });
+      await navigator.share({ files: [file], title: filename });
+    } else {
+      // Desktop / browsers without file-sharing support — standard blob download
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = filename;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+    }
+
+    setStatus(`Excel file ready: ${filename}`);
     setStatusIsError(false);
   }
 
