@@ -1182,7 +1182,7 @@ function ReportsPanel({ adminToken, onAuthFailure, branding }) {
 
     const { default: XLSX } = await import("xlsx");
     const rows = bookings.map(b => ({
-      "Date": b.date,
+      "Date (YYYY-MM-DD)": b.date,
       "Start Time": formatTime(b.start_time),
       "End Time": formatTime(b.end_time),
       "Customer Name": b.name,
@@ -1231,7 +1231,7 @@ function ReportsPanel({ adminToken, onAuthFailure, branding }) {
 
     autoTable(doc, {
       startY: 40,
-      head: [["Date", "Start", "End", "Customer Name", "Phone", "Email", "Address / Location", "Notes"]],
+      head: [["Date (YYYY-MM-DD)", "Start", "End", "Customer Name", "Phone", "Email", "Address / Location", "Notes"]],
       body: bookings.map(b => [
         b.date,
         formatTime(b.start_time),
@@ -1324,7 +1324,7 @@ function ReportsPanel({ adminToken, onAuthFailure, branding }) {
           <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12 }}>
             <thead>
               <tr style={{ background: "#1A2B3D", color: "#fff" }}>
-                {["Date", "Time", "Customer", "Phone", "Email", "Address", "Notes"].map(h => (
+                {["Date (YYYY-MM-DD)", "Time", "Customer", "Phone", "Email", "Address", "Notes"].map(h => (
                   <th key={h} style={{ padding: "8px 10px", textAlign: "left", fontWeight: 700, whiteSpace: "nowrap" }}>{h}</th>
                 ))}
               </tr>
