@@ -590,6 +590,14 @@ export default function App() {
             <p style={{ margin: "0 0 8px", fontSize: 14, color: "#6b6657" }}>
               {formatDayLabel(current)}, {formatClock(confirmedBooking.start_time)}–{formatClock(confirmedBooking.end_time)}
             </p>
+            {confirmedBooking.reference && (
+              <div style={{ display: "inline-block", background: "#F5F3EE", border: "1px solid #E3DECF", borderRadius: 8, padding: "8px 16px", margin: "0 0 14px" }}>
+                <div style={{ fontSize: 10, color: "#8B8680", textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: 3 }}>Booking Reference</div>
+                <div style={{ fontFamily: "ui-monospace, SFMono-Regular, Menlo, monospace", fontSize: 16, fontWeight: 700, color: "#E8702A", letterSpacing: "0.04em" }}>
+                  {confirmedBooking.reference}
+                </div>
+              </div>
+            )}
             <p style={{ margin: "0 0 18px", fontSize: 12, color: "#8B8680" }}>We'll be in touch by phone or email to confirm before then.</p>
             <button className="bk-primary" style={{ width: "100%" }} onClick={() => setConfirmedBooking(null)}>Done</button>
           </div>
@@ -903,6 +911,11 @@ function AdminBookingRow({ booking, interval, onDelete }) {
         </div>
         <div style={{ flex: 1, minWidth: 0, fontSize: 13 }}>
           <div style={{ fontWeight: 700 }}>{booking.name}{booking.phone ? ` · ${booking.phone}` : ""}{booking.email ? ` · ${booking.email}` : ""}</div>
+          {booking.reference && (
+            <div style={{ fontFamily: "ui-monospace, SFMono-Regular, Menlo, monospace", fontSize: 11, color: "#E8702A", fontWeight: 700, marginTop: 3, letterSpacing: "0.04em" }}>
+              Ref: {booking.reference}
+            </div>
+          )}
           {booking.address && <div style={{ color: "#1A2B3D", marginTop: 2 }}>{booking.address}</div>}
           {booking.notes && <div style={{ color: "#6b6657", marginTop: 2 }}>{booking.notes}</div>}
         </div>
@@ -1184,6 +1197,7 @@ function ReportsPanel({ adminToken, onAuthFailure, branding }) {
     const XLSXmod = await import("xlsx");
     const XLSX = XLSXmod.default ?? XLSXmod;
     const rows = bookings.map(b => ({
+      "Booking Reference": b.reference || "",
       "Date (YYYY-MM-DD)": String(b.date).slice(0, 10),
       "Start Time": formatTime(b.start_time),
       "End Time": formatTime(b.end_time),
@@ -1196,7 +1210,7 @@ function ReportsPanel({ adminToken, onAuthFailure, branding }) {
 
     const ws = XLSX.utils.json_to_sheet(rows);
     ws["!cols"] = [
-      { wch: 12 }, { wch: 11 }, { wch: 11 }, { wch: 24 },
+      { wch: 20 }, { wch: 12 }, { wch: 11 }, { wch: 11 }, { wch: 24 },
       { wch: 18 }, { wch: 28 }, { wch: 32 }, { wch: 30 },
     ];
     const wb = XLSX.utils.book_new();
@@ -1259,8 +1273,9 @@ function ReportsPanel({ adminToken, onAuthFailure, branding }) {
 
     autoTable(doc, {
       startY: 40,
-      head: [["Date (YYYY-MM-DD)", "Start", "End", "Customer Name", "Phone", "Email", "Address / Location", "Notes"]],
+      head: [["Ref #", "Date (YYYY-MM-DD)", "Start", "End", "Customer Name", "Phone", "Email", "Address / Location", "Notes"]],
       body: bookings.map(b => [
+        b.reference || "",
         String(b.date).slice(0, 10),
         formatTime(b.start_time),
         formatTime(b.end_time),
@@ -1274,14 +1289,15 @@ function ReportsPanel({ adminToken, onAuthFailure, branding }) {
       headStyles: { fillColor: [26, 43, 61], textColor: 255, fontStyle: "bold" },
       alternateRowStyles: { fillColor: [245, 243, 238] },
       columnStyles: {
-        0: { cellWidth: 22 },
-        1: { cellWidth: 16 },
-        2: { cellWidth: 16 },
-        3: { cellWidth: 34 },
-        4: { cellWidth: 28 },
-        5: { cellWidth: 42 },
-        6: { cellWidth: 50 },
-        7: { cellWidth: "auto" },
+        0: { cellWidth: 28 }, // Ref #
+        1: { cellWidth: 22 }, // Date
+        2: { cellWidth: 14 }, // Start
+        3: { cellWidth: 14 }, // End
+        4: { cellWidth: 30 }, // Customer Name
+        5: { cellWidth: 25 }, // Phone
+        6: { cellWidth: 38 }, // Email
+        7: { cellWidth: 44 }, // Address
+        8: { cellWidth: "auto" }, // Notes
       },
       didDrawPage: (data) => {
         // Page numbers
@@ -1352,7 +1368,7 @@ function ReportsPanel({ adminToken, onAuthFailure, branding }) {
           <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12 }}>
             <thead>
               <tr style={{ background: "#1A2B3D", color: "#fff" }}>
-                {["Date (YYYY-MM-DD)", "Time", "Customer", "Phone", "Email", "Address", "Notes"].map(h => (
+                {["Ref #", "Date (YYYY-MM-DD)", "Time", "Customer", "Phone", "Email", "Address", "Notes"].map(h => (
                   <th key={h} style={{ padding: "8px 10px", textAlign: "left", fontWeight: 700, whiteSpace: "nowrap" }}>{h}</th>
                 ))}
               </tr>
@@ -1360,6 +1376,7 @@ function ReportsPanel({ adminToken, onAuthFailure, branding }) {
             <tbody>
               {previewRows.map((b, i) => (
                 <tr key={b.id || i} style={{ background: i % 2 === 0 ? "#F5F3EE" : "#fff" }}>
+                  <td style={{ padding: "7px 10px", whiteSpace: "nowrap", fontFamily: "ui-monospace, SFMono-Regular, Menlo, monospace", fontSize: 11, color: "#E8702A", fontWeight: 700 }}>{b.reference || "—"}</td>
                   <td style={{ padding: "7px 10px", whiteSpace: "nowrap" }}>{String(b.date).slice(0, 10)}</td>
                   <td style={{ padding: "7px 10px", whiteSpace: "nowrap" }}>{formatTime(b.start_time)}–{formatTime(b.end_time)}</td>
                   <td style={{ padding: "7px 10px", whiteSpace: "nowrap", fontWeight: 600 }}>{b.name}</td>
