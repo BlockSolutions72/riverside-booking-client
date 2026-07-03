@@ -1180,9 +1180,11 @@ function ReportsPanel({ adminToken, onAuthFailure, branding }) {
       return;
     }
 
-    const { default: XLSX } = await import("xlsx");
+    // xlsx is a CommonJS package — import the whole namespace, which exposes utils and writeFile
+    const XLSXmod = await import("xlsx");
+    const XLSX = XLSXmod.default ?? XLSXmod;
     const rows = bookings.map(b => ({
-      "Date (YYYY-MM-DD)": b.date,
+      "Date (YYYY-MM-DD)": String(b.date).slice(0, 10),
       "Start Time": formatTime(b.start_time),
       "End Time": formatTime(b.end_time),
       "Customer Name": b.name,
@@ -1214,8 +1216,10 @@ function ReportsPanel({ adminToken, onAuthFailure, branding }) {
       return;
     }
 
-    const { jsPDF } = await import("jspdf");
-    const { default: autoTable } = await import("jspdf-autotable");
+    const jspdfMod = await import("jspdf");
+    const jsPDF = jspdfMod.jsPDF ?? jspdfMod.default;
+    const autoTableMod = await import("jspdf-autotable");
+    const autoTable = autoTableMod.default ?? autoTableMod;
 
     const doc = new jsPDF({ orientation: "landscape", unit: "mm", format: "a4" });
 
@@ -1233,7 +1237,7 @@ function ReportsPanel({ adminToken, onAuthFailure, branding }) {
       startY: 40,
       head: [["Date (YYYY-MM-DD)", "Start", "End", "Customer Name", "Phone", "Email", "Address / Location", "Notes"]],
       body: bookings.map(b => [
-        b.date,
+        String(b.date).slice(0, 10),
         formatTime(b.start_time),
         formatTime(b.end_time),
         b.name,
@@ -1332,7 +1336,7 @@ function ReportsPanel({ adminToken, onAuthFailure, branding }) {
             <tbody>
               {previewRows.map((b, i) => (
                 <tr key={b.id || i} style={{ background: i % 2 === 0 ? "#F5F3EE" : "#fff" }}>
-                  <td style={{ padding: "7px 10px", whiteSpace: "nowrap" }}>{b.date}</td>
+                  <td style={{ padding: "7px 10px", whiteSpace: "nowrap" }}>{String(b.date).slice(0, 10)}</td>
                   <td style={{ padding: "7px 10px", whiteSpace: "nowrap" }}>{formatTime(b.start_time)}–{formatTime(b.end_time)}</td>
                   <td style={{ padding: "7px 10px", whiteSpace: "nowrap", fontWeight: 600 }}>{b.name}</td>
                   <td style={{ padding: "7px 10px", whiteSpace: "nowrap" }}>{b.phone || "—"}</td>
