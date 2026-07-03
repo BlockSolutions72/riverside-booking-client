@@ -881,6 +881,7 @@ function AdminView({
         </div>
       </div>
 
+      <ReportsPanel adminToken={adminToken} onAuthFailure={onAuthFailure} branding={branding} />
       <SecurityPanel adminToken={adminToken} onAuthFailure={onAuthFailure} />
       <BrandingPanel branding={branding} setBranding={setBranding} adminToken={adminToken} onAuthFailure={onAuthFailure} />
     </div>
@@ -1101,6 +1102,252 @@ function BlockedDatesPanel({ adminToken, onAuthFailure, loadCalendarMonth, loadD
             );
           })}
         </div>
+      )}
+    </div>
+  );
+}
+
+function ReportsPanel({ adminToken, onAuthFailure, branding }) {
+  const today = new Date();
+  const firstOfMonth = new Date(today.getFullYear(), today.getMonth(), 1);
+  const [fromDate, setFromDate] = useState(firstOfMonth.toISOString().slice(0, 10));
+  const [toDate, setToDate] = useState(today.toISOString().slice(0, 10));
+  const [reportEmail, setReportEmail] = useState("");
+  const [loading, setLoading] = useState(false);
+  const [status, setStatus] = useState("");
+  const [statusIsError, setStatusIsError] = useState(false);
+  const [previewRows, setPreviewRows] = useState(null);
+
+  function formatDateLabel(dateStr) {
+    return new Date(dateStr + "T00:00:00").toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" });
+  }
+
+  function formatTime(t) {
+    if (!t) return "";
+    const [h, m] = t.split(":").map(Number);
+    const period = h >= 12 ? "pm" : "am";
+    const h12 = h % 12 === 0 ? 12 : h % 12;
+    return m === 0 ? `${h12}${period}` : `${h12}:${String(m).padStart(2, "0")}${period}`;
+  }
+
+  async function fetchBookings() {
+    if (!fromDate || !toDate) {
+      setStatus("Please select both a start and end date.");
+      setStatusIsError(true);
+      return null;
+    }
+    if (fromDate > toDate) {
+      setStatus("Start date must be on or before the end date.");
+      setStatusIsError(true);
+      return null;
+    }
+    setLoading(true);
+    setStatus("");
+    setStatusIsError(false);
+    try {
+      const data = await api.adminListBookedRange(fromDate, toDate, adminToken);
+      return data.bookings || [];
+    } catch (e) {
+      if (e.status === 401) { onAuthFailure(); return null; }
+      setStatus(e.message || "Couldn't load bookings for this date range.");
+      setStatusIsError(true);
+      return null;
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  async function handlePreview() {
+    const bookings = await fetchBookings();
+    if (bookings === null) return;
+    if (bookings.length === 0) {
+      setStatus("No bookings found for this date range.");
+      setStatusIsError(false);
+      setPreviewRows([]);
+      return;
+    }
+    setPreviewRows(bookings);
+    setStatus(`${bookings.length} booking${bookings.length === 1 ? "" : "s"} found.`);
+    setStatusIsError(false);
+  }
+
+  async function handleExcel() {
+    const bookings = await fetchBookings();
+    if (!bookings) return;
+    if (bookings.length === 0) {
+      setStatus("No bookings found for this date range — nothing to export.");
+      setStatusIsError(false);
+      return;
+    }
+
+    const { default: XLSX } = await import("xlsx");
+    const rows = bookings.map(b => ({
+      "Date": b.date,
+      "Start Time": formatTime(b.start_time),
+      "End Time": formatTime(b.end_time),
+      "Customer Name": b.name,
+      "Phone": b.phone || "",
+      "Email": b.email || "",
+      "Address / Location": b.address || "",
+      "Notes": b.notes || "",
+    }));
+
+    const ws = XLSX.utils.json_to_sheet(rows);
+    ws["!cols"] = [
+      { wch: 12 }, { wch: 11 }, { wch: 11 }, { wch: 24 },
+      { wch: 18 }, { wch: 28 }, { wch: 32 }, { wch: 30 },
+    ];
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, "Bookings");
+    const filename = `${branding.name.replace(/\s+/g, "_")}_Bookings_${fromDate}_to_${toDate}.xlsx`;
+    XLSX.writeFile(wb, filename);
+    setStatus(`Excel file downloaded: ${filename}`);
+    setStatusIsError(false);
+  }
+
+  async function handlePDF() {
+    const bookings = await fetchBookings();
+    if (!bookings) return;
+    if (bookings.length === 0) {
+      setStatus("No bookings found for this date range — nothing to export.");
+      setStatusIsError(false);
+      return;
+    }
+
+    const { jsPDF } = await import("jspdf");
+    const { default: autoTable } = await import("jspdf-autotable");
+
+    const doc = new jsPDF({ orientation: "landscape", unit: "mm", format: "a4" });
+
+    // Header
+    doc.setFontSize(16);
+    doc.setTextColor(26, 43, 61);
+    doc.text(`${branding.name} — Booking Report`, 14, 16);
+    doc.setFontSize(10);
+    doc.setTextColor(107, 102, 87);
+    doc.text(`Period: ${formatDateLabel(fromDate)} – ${formatDateLabel(toDate)}`, 14, 23);
+    doc.text(`Generated: ${new Date().toLocaleString()}`, 14, 29);
+    doc.text(`Total bookings: ${bookings.length}`, 14, 35);
+
+    autoTable(doc, {
+      startY: 40,
+      head: [["Date", "Start", "End", "Customer Name", "Phone", "Email", "Address / Location", "Notes"]],
+      body: bookings.map(b => [
+        b.date,
+        formatTime(b.start_time),
+        formatTime(b.end_time),
+        b.name,
+        b.phone || "",
+        b.email || "",
+        b.address || "",
+        b.notes || "",
+      ]),
+      styles: { fontSize: 8, cellPadding: 2.5, overflow: "linebreak" },
+      headStyles: { fillColor: [26, 43, 61], textColor: 255, fontStyle: "bold" },
+      alternateRowStyles: { fillColor: [245, 243, 238] },
+      columnStyles: {
+        0: { cellWidth: 22 },
+        1: { cellWidth: 16 },
+        2: { cellWidth: 16 },
+        3: { cellWidth: 34 },
+        4: { cellWidth: 28 },
+        5: { cellWidth: 42 },
+        6: { cellWidth: 50 },
+        7: { cellWidth: "auto" },
+      },
+      didDrawPage: (data) => {
+        // Page numbers
+        const pageCount = doc.internal.getNumberOfPages();
+        doc.setFontSize(8);
+        doc.setTextColor(150);
+        doc.text(`Page ${data.pageNumber} of ${pageCount}`, doc.internal.pageSize.getWidth() - 30, doc.internal.pageSize.getHeight() - 8);
+      },
+    });
+
+    const filename = `${branding.name.replace(/\s+/g, "_")}_Bookings_${fromDate}_to_${toDate}.pdf`;
+    doc.save(filename);
+    setStatus(`PDF file downloaded: ${filename}`);
+    setStatusIsError(false);
+  }
+
+  return (
+    <div style={{ background: "#fff", border: "1px solid #E3DECF", borderRadius: 12, padding: 16, marginTop: 24 }}>
+      <h3 style={{ margin: "0 0 4px", fontSize: 14, fontWeight: 700, color: "#6b6657", textTransform: "uppercase", letterSpacing: "0.04em" }}>Reports</h3>
+      <p style={{ fontSize: 12, color: "#8B8680", margin: "0 0 14px" }}>
+        Generate a booking report for any date range. Downloads as Excel or PDF with all customer information in tabulated form.
+      </p>
+
+      {/* Date range */}
+      <div className="gen-row" style={{ display: "flex", gap: 10, marginBottom: 12, flexWrap: "wrap" }}>
+        <div style={{ flex: "1 1 0", minWidth: 120 }}>
+          <label style={{ fontSize: 11, color: "#8B8680", display: "block", marginBottom: 4 }}>From date</label>
+          <input type="date" className="bk-input" value={fromDate} onChange={(e) => setFromDate(e.target.value)} />
+        </div>
+        <div style={{ flex: "1 1 0", minWidth: 120 }}>
+          <label style={{ fontSize: 11, color: "#8B8680", display: "block", marginBottom: 4 }}>To date</label>
+          <input type="date" className="bk-input" value={toDate} onChange={(e) => setToDate(e.target.value)} />
+        </div>
+      </div>
+
+      {/* Report email */}
+      <label style={{ fontSize: 11, color: "#8B8680", display: "block", marginBottom: 4 }}>Report email address <span style={{ color: "#C3BDB5" }}>(for future auto-sending)</span></label>
+      <input
+        type="email"
+        className="bk-input"
+        value={reportEmail}
+        onChange={(e) => setReportEmail(e.target.value)}
+        placeholder="reports@yourbusiness.com"
+        style={{ marginBottom: 14 }}
+      />
+
+      {/* Status */}
+      {status && (
+        <p style={{ fontSize: 12, color: statusIsError ? "#A32D2D" : "#5C8A72", margin: "0 0 12px", fontWeight: statusIsError ? 400 : 600 }}>{status}</p>
+      )}
+
+      {/* Action buttons */}
+      <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: previewRows && previewRows.length > 0 ? 16 : 0 }}>
+        <button className="bk-ghost" onClick={handlePreview} disabled={loading} style={{ padding: "10px 16px", fontSize: 14 }}>
+          {loading ? "Loading…" : "Preview"}
+        </button>
+        <button className="bk-primary" onClick={handleExcel} disabled={loading} style={{ padding: "10px 16px", fontSize: 14, display: "flex", alignItems: "center", gap: 6 }}>
+          <span style={{ fontSize: 16 }}>⬇</span> Excel
+        </button>
+        <button className="bk-primary" onClick={handlePDF} disabled={loading} style={{ padding: "10px 16px", fontSize: 14, background: "#1A2B3D", display: "flex", alignItems: "center", gap: 6 }}>
+          <span style={{ fontSize: 16 }}>⬇</span> PDF
+        </button>
+      </div>
+
+      {/* Inline preview table */}
+      {previewRows && previewRows.length > 0 && (
+        <div style={{ overflowX: "auto", marginTop: 8 }}>
+          <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12 }}>
+            <thead>
+              <tr style={{ background: "#1A2B3D", color: "#fff" }}>
+                {["Date", "Time", "Customer", "Phone", "Email", "Address", "Notes"].map(h => (
+                  <th key={h} style={{ padding: "8px 10px", textAlign: "left", fontWeight: 700, whiteSpace: "nowrap" }}>{h}</th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {previewRows.map((b, i) => (
+                <tr key={b.id || i} style={{ background: i % 2 === 0 ? "#F5F3EE" : "#fff" }}>
+                  <td style={{ padding: "7px 10px", whiteSpace: "nowrap" }}>{b.date}</td>
+                  <td style={{ padding: "7px 10px", whiteSpace: "nowrap" }}>{formatTime(b.start_time)}–{formatTime(b.end_time)}</td>
+                  <td style={{ padding: "7px 10px", whiteSpace: "nowrap", fontWeight: 600 }}>{b.name}</td>
+                  <td style={{ padding: "7px 10px", whiteSpace: "nowrap" }}>{b.phone || "—"}</td>
+                  <td style={{ padding: "7px 10px" }}>{b.email || "—"}</td>
+                  <td style={{ padding: "7px 10px" }}>{b.address || "—"}</td>
+                  <td style={{ padding: "7px 10px", color: "#6b6657" }}>{b.notes || "—"}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+
+      {previewRows && previewRows.length === 0 && !statusIsError && (
+        <p style={{ fontSize: 13, color: "#8B8680", margin: "12px 0 0" }}>No bookings in this date range.</p>
       )}
     </div>
   );

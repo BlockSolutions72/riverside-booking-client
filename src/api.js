@@ -90,6 +90,9 @@ export const api = {
     request("/api/admin/blocked-dates", { method: "POST", body: { startDate, endDate, reason }, token }),
   adminUnblockDate: (date, token) =>
     request(`/api/admin/blocked-dates/${date}`, { method: "DELETE", token }),
+
+  adminListBookedRange: (from, to, token) =>
+    request(`/api/admin/bookings?from=${from}&to=${to}`, { token }),
 };
 
 export { ApiError };
