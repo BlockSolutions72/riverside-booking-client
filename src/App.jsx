@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback, useRef } from "react";
 import {
   Plus, Trash2, ChevronLeft, ChevronRight, X, Check, Calendar as CalendarIcon,
-  Settings, User, Car, Clock, MapPin, LogOut, Share2, Copy, CheckCheck, Pencil,
+  Settings, User, Car, Clock, MapPin, LogOut, Share2, Copy, CheckCheck, Pencil, Search,
 } from "lucide-react";
 import { api, getStoredAdminToken, storeAdminToken, clearStoredAdminToken } from "./api";
 import {
@@ -17,6 +17,7 @@ export default function App() {
   const [passwordError, setPasswordError] = useState("");
   const [loggingIn, setLoggingIn] = useState(false);
   const [shareModalOpen, setShareModalOpen] = useState(false);
+  const [searchModalOpen, setSearchModalOpen] = useState(false);
 
   const [current, setCurrent] = useState(() => new Date());
   const [visibleMonth, setVisibleMonth] = useState(() => {
@@ -531,6 +532,17 @@ export default function App() {
             <span style={{ fontWeight: 700, fontSize: 15, letterSpacing: "0.01em" }}>{branding.name}</span>
           </div>
           <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+            {mode === "admin" && (
+              <button
+                onClick={() => setSearchModalOpen(true)}
+                className="bk-icon-btn"
+                style={{ color: "#fff" }}
+                aria-label="Search bookings"
+                title="Search bookings"
+              >
+                <Search size={16} />
+              </button>
+            )}
             <button
               onClick={() => setShareModalOpen(true)}
               className="bk-icon-btn"
@@ -707,6 +719,21 @@ export default function App() {
         <ShareModal onClose={() => setShareModalOpen(false)} branding={branding} />
       )}
 
+      {searchModalOpen && (
+        <BookingSearchModal
+          onClose={() => setSearchModalOpen(false)}
+          adminToken={adminToken}
+          onAuthFailure={handleAdminAuthFailure}
+          onSelectBooking={(booking) => {
+            // Navigate to the booking's date in admin view then close the modal
+            const d = new Date(booking.date + "T00:00:00");
+            selectDate(d);
+            setVisibleMonth(new Date(d.getFullYear(), d.getMonth(), 1));
+            setSearchModalOpen(false);
+          }}
+        />
+      )}
+
       {editingBooking && (
         <Modal onClose={() => !editSaving && setEditingBooking(null)}>
           <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 14 }}>
@@ -766,6 +793,127 @@ export default function App() {
         </Modal>
       )}
     </div>
+  );
+}
+
+// ---------- booking search modal ----------
+
+function BookingSearchModal({ onClose, adminToken, onAuthFailure, onSelectBooking }) {
+  const [query, setQuery] = useState("");
+  const [results, setResults] = useState(null); // null = not searched yet
+  const [searching, setSearching] = useState(false);
+  const [searchError, setSearchError] = useState("");
+  const inputRef = useRef(null);
+
+  useEffect(() => {
+    // Auto-focus the search input when the modal opens
+    setTimeout(() => inputRef.current?.focus(), 50);
+  }, []);
+
+  async function handleSearch() {
+    if (!query.trim()) return;
+    setSearching(true);
+    setSearchError("");
+    setResults(null);
+    try {
+      const data = await api.adminSearchBookings(query.trim(), adminToken);
+      setResults(data.bookings || []);
+    } catch (e) {
+      if (e.status === 401) {
+        onAuthFailure();
+      } else {
+        setSearchError(e.message || "Search failed — please try again.");
+      }
+    } finally {
+      setSearching(false);
+    }
+  }
+
+  function formatBookingDate(dateStr) {
+    return new Date(dateStr + "T00:00:00").toLocaleDateString(undefined, {
+      weekday: "short", month: "short", day: "numeric", year: "numeric",
+    });
+  }
+
+  return (
+    <Modal onClose={onClose}>
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 16 }}>
+        <h2 style={{ margin: 0, fontSize: 18, fontWeight: 700 }}>Search bookings</h2>
+        <button className="bk-icon-btn" onClick={onClose} aria-label="Close"><X size={18} /></button>
+      </div>
+
+      <p style={{ fontSize: 12, color: "#8B8680", margin: "0 0 14px" }}>
+        Search by reference number, phone number, or customer name.
+      </p>
+
+      <div style={{ display: "flex", gap: 8, marginBottom: 16 }}>
+        <input
+          ref={inputRef}
+          className="bk-input"
+          placeholder="e.g. JUL032680A-10A · (518) 336-4483 · Jane Smith"
+          value={query}
+          onChange={(e) => setQuery(e.target.value)}
+          onKeyDown={(e) => e.key === "Enter" && handleSearch()}
+          style={{ flex: 1 }}
+        />
+        <button
+          className="bk-primary"
+          onClick={handleSearch}
+          disabled={!query.trim() || searching}
+          style={{ padding: "10px 16px", flexShrink: 0, display: "flex", alignItems: "center", gap: 6 }}
+        >
+          <Search size={15} />
+          {searching ? "Searching…" : "Search"}
+        </button>
+      </div>
+
+      {searchError && (
+        <p style={{ fontSize: 12, color: "#A32D2D", margin: "0 0 12px" }}>{searchError}</p>
+      )}
+
+      {results !== null && results.length === 0 && (
+        <p style={{ fontSize: 13, color: "#8B8680", textAlign: "center", padding: "20px 0" }}>
+          No bookings found for "{query}".
+        </p>
+      )}
+
+      {results && results.length > 0 && (
+        <div>
+          <p style={{ fontSize: 11, color: "#8B8680", margin: "0 0 10px" }}>
+            {results.length} result{results.length === 1 ? "" : "s"} — tap to navigate to that date in admin view.
+          </p>
+          <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+            {results.map((b) => (
+              <button
+                key={b.id}
+                onClick={() => onSelectBooking(b)}
+                style={{
+                  width: "100%", textAlign: "left", background: "#F5F3EE",
+                  border: "1px solid #E3DECF", borderLeft: "3px solid #1A2B3D",
+                  borderRadius: 8, padding: "12px 14px", cursor: "pointer",
+                  display: "flex", flexDirection: "column", gap: 4,
+                }}
+              >
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 8, flexWrap: "wrap" }}>
+                  <span style={{ fontWeight: 700, fontSize: 14 }}>{b.name}</span>
+                  {b.reference && (
+                    <span style={{ fontFamily: "ui-monospace, SFMono-Regular, Menlo, monospace", fontSize: 11, color: "#E8702A", fontWeight: 700 }}>
+                      {b.reference}
+                    </span>
+                  )}
+                </div>
+                <div style={{ fontSize: 12, color: "#6b6657" }}>
+                  {formatBookingDate(b.date)} · {formatClock(b.start_time)}–{formatClock(b.end_time)}
+                </div>
+                <div style={{ fontSize: 12, color: "#8B8680" }}>
+                  {[b.phone, b.email].filter(Boolean).join(" · ") || "No contact details"}
+                </div>
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
+    </Modal>
   );
 }
 

@@ -93,6 +93,9 @@ export const api = {
 
   adminListBookedRange: (from, to, token) =>
     request(`/api/admin/bookings?from=${from}&to=${to}`, { token }),
+
+  adminSearchBookings: (query, token) =>
+    request(`/api/admin/bookings/search?q=${encodeURIComponent(query)}`, { token }),
 };
 
 export { ApiError };
