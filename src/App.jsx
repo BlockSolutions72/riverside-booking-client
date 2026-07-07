@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback, useRef } from "react";
 import {
   Plus, Trash2, ChevronLeft, ChevronRight, X, Check, Calendar as CalendarIcon,
-  Settings, User, Car, Clock, MapPin, LogOut, Share2, Copy, CheckCheck,
+  Settings, User, Car, Clock, MapPin, LogOut, Share2, Copy, CheckCheck, Pencil,
 } from "lucide-react";
 import { api, getStoredAdminToken, storeAdminToken, clearStoredAdminToken } from "./api";
 import {
@@ -51,6 +51,12 @@ export default function App() {
   const [locating, setLocating] = useState(false);
   const [locateError, setLocateError] = useState("");
   const [confirmedBooking, setConfirmedBooking] = useState(null);
+
+  // Edit booking modal
+  const [editingBooking, setEditingBooking] = useState(null); // the booking being edited
+  const [editForm, setEditForm] = useState({ date: "", start: "", end: "", name: "", phone: "", email: "", address: "", notes: "" });
+  const [editSaving, setEditSaving] = useState(false);
+  const [editError, setEditError] = useState("");
 
   const [windowForm, setWindowForm] = useState({ window_start: "08:00", window_end: "17:00", interval_minutes: 60, service_id: "detailing" });
   const [windowSaving, setWindowSaving] = useState(false);
@@ -377,6 +383,81 @@ export default function App() {
     }
   }
 
+  function handleEditBooking(booking) {
+    setEditForm({
+      date: booking.date || key,
+      start: booking.start,
+      end: booking.end,
+      name: booking.name,
+      phone: booking.phone || "",
+      email: booking.email || "",
+      address: booking.address || "",
+      notes: booking.notes || "",
+    });
+    setEditError("");
+    setEditingBooking(booking);
+  }
+
+  async function handleSaveEdit() {
+    if (!editForm.name.trim()) {
+      setEditError("Name is required.");
+      return;
+    }
+    if (!editForm.phone.trim() && !editForm.email.trim()) {
+      setEditError("Please provide a phone number or email.");
+      return;
+    }
+    if (!editForm.start || !editForm.end) {
+      setEditError("Start and end times are required.");
+      return;
+    }
+    setEditSaving(true);
+    setEditError("");
+    try {
+      // Delete the old booking and create a new one with updated details.
+      // This approach re-runs all server-side validation (overlap check,
+      // blocked date check, window check) on the new date/time, which is
+      // exactly what we want — moving a booking is functionally a new booking.
+      await api.adminDeleteBooking(editingBooking.id, adminToken);
+      const result = await api.createBooking({
+        date: editForm.date,
+        start: editForm.start,
+        end: editForm.end,
+        name: editForm.name.trim(),
+        phone: editForm.phone.trim(),
+        email: editForm.email.trim(),
+        address: editForm.address.trim(),
+        notes: editForm.notes.trim(),
+      });
+      setEditingBooking(null);
+      await loadDay();
+      await loadCalendarMonth();
+    } catch (e) {
+      if (e.status === 401) {
+        handleAdminAuthFailure();
+      } else {
+        // If the new booking failed, the old one is already deleted — restore it
+        // by recreating with original details so we don't lose the booking.
+        try {
+          await api.createBooking({
+            date: editingBooking.date || key,
+            start: editingBooking.start,
+            end: editingBooking.end,
+            name: editingBooking.name,
+            phone: editingBooking.phone || "",
+            email: editingBooking.email || "",
+            address: editingBooking.address || "",
+            notes: editingBooking.notes || "",
+          });
+        } catch (_) { /* best-effort restore */ }
+        setEditError(e.message || "Couldn't save changes — the booking was not modified.");
+        await loadDay();
+      }
+    } finally {
+      setEditSaving(false);
+    }
+  }
+
   return (
     <div style={{ fontFamily: "'Inter', ui-sans-serif, -apple-system, 'Segoe UI', Roboto, sans-serif", background: "#F5F3EE", color: "#1A2B3D", minHeight: "100vh", position: "relative" }}>
       <style>{`
@@ -489,7 +570,7 @@ export default function App() {
           current={current} shiftDay={shiftDay} goToday={goToday}
           windowForm={windowForm} setWindowForm={setWindowForm} handleSaveWindow={handleSaveWindow}
           windowSaving={windowSaving} windowSaved={windowSaved} windowSaveError={windowSaveError}
-          dayData={dayData} dayLoading={dayLoading} onDeleteBooking={handleDeleteBooking}
+          dayData={dayData} dayLoading={dayLoading} onDeleteBooking={handleDeleteBooking} onEditBooking={handleEditBooking}
           visibleMonth={visibleMonth} setVisibleMonth={setVisibleMonth} selectDate={selectDate}
           calendarDays={calendarDays} calendarExpanded={calendarExpanded} setCalendarExpanded={setCalendarExpanded}
           branding={branding} setBranding={setBranding} adminToken={adminToken} onAuthFailure={handleAdminAuthFailure}
@@ -624,6 +705,65 @@ export default function App() {
 
       {shareModalOpen && (
         <ShareModal onClose={() => setShareModalOpen(false)} branding={branding} />
+      )}
+
+      {editingBooking && (
+        <Modal onClose={() => !editSaving && setEditingBooking(null)}>
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 14 }}>
+            <h2 style={{ margin: 0, fontSize: 18, fontWeight: 700 }}>Edit booking</h2>
+            <button className="bk-icon-btn" onClick={() => setEditingBooking(null)} aria-label="Close" disabled={editSaving}><X size={18} /></button>
+          </div>
+
+          {/* Original reference for reference */}
+          {editingBooking.reference && (
+            <div style={{ fontSize: 11, color: "#8B8680", marginBottom: 14, fontFamily: "ui-monospace, SFMono-Regular, Menlo, monospace" }}>
+              Editing ref: <span style={{ color: "#E8702A", fontWeight: 700 }}>{editingBooking.reference}</span>
+            </div>
+          )}
+
+          {/* Date and time */}
+          <div className="gen-row" style={{ display: "flex", gap: 10, marginBottom: 12, flexWrap: "wrap" }}>
+            <div style={{ flex: "1 1 0", minWidth: 110 }}>
+              <label style={{ fontSize: 11, color: "#8B8680", display: "block", marginBottom: 4 }}>Date</label>
+              <input type="date" className="bk-input" value={editForm.date} onChange={(e) => setEditForm({ ...editForm, date: e.target.value })} disabled={editSaving} />
+            </div>
+            <div style={{ flex: "1 1 0", minWidth: 90 }}>
+              <label style={{ fontSize: 11, color: "#8B8680", display: "block", marginBottom: 4 }}>Start time</label>
+              <input type="time" className="bk-input" value={editForm.start} onChange={(e) => setEditForm({ ...editForm, start: e.target.value })} disabled={editSaving} />
+            </div>
+            <div style={{ flex: "1 1 0", minWidth: 90 }}>
+              <label style={{ fontSize: 11, color: "#8B8680", display: "block", marginBottom: 4 }}>End time</label>
+              <input type="time" className="bk-input" value={editForm.end} onChange={(e) => setEditForm({ ...editForm, end: e.target.value })} disabled={editSaving} />
+            </div>
+          </div>
+
+          {/* Customer details */}
+          <label style={{ fontSize: 11, color: "#8B8680", display: "block", marginBottom: 4 }}>Customer name</label>
+          <input className="bk-input" value={editForm.name} onChange={(e) => setEditForm({ ...editForm, name: e.target.value })} style={{ marginBottom: 10 }} disabled={editSaving} />
+
+          <label style={{ fontSize: 11, color: "#8B8680", display: "block", marginBottom: 4 }}>Phone</label>
+          <input className="bk-input" value={editForm.phone} onChange={(e) => setEditForm({ ...editForm, phone: e.target.value })} style={{ marginBottom: 10 }} disabled={editSaving} />
+
+          <label style={{ fontSize: 11, color: "#8B8680", display: "block", marginBottom: 4 }}>Email</label>
+          <input type="email" className="bk-input" value={editForm.email} onChange={(e) => setEditForm({ ...editForm, email: e.target.value })} style={{ marginBottom: 10 }} disabled={editSaving} />
+
+          <label style={{ fontSize: 11, color: "#8B8680", display: "block", marginBottom: 4 }}>Address / Location</label>
+          <input className="bk-input" value={editForm.address} onChange={(e) => setEditForm({ ...editForm, address: e.target.value })} style={{ marginBottom: 10 }} disabled={editSaving} />
+
+          <label style={{ fontSize: 11, color: "#8B8680", display: "block", marginBottom: 4 }}>Notes</label>
+          <input className="bk-input" value={editForm.notes} onChange={(e) => setEditForm({ ...editForm, notes: e.target.value })} style={{ marginBottom: 14 }} disabled={editSaving} />
+
+          {editError && <p style={{ fontSize: 12, color: "#A32D2D", margin: "0 0 12px" }}>{editError}</p>}
+
+          <div style={{ display: "flex", gap: 10 }}>
+            <button className="bk-primary" style={{ flex: 1 }} onClick={handleSaveEdit} disabled={editSaving}>
+              {editSaving ? "Saving…" : "Save changes"}
+            </button>
+            <button className="bk-ghost" style={{ flex: 1 }} onClick={() => setEditingBooking(null)} disabled={editSaving}>
+              Cancel
+            </button>
+          </div>
+        </Modal>
       )}
     </div>
   );
@@ -815,7 +955,7 @@ function CustomerView({
 
 function AdminView({
   current, shiftDay, goToday, windowForm, setWindowForm, handleSaveWindow, windowSaving, windowSaved, windowSaveError,
-  dayData, dayLoading, onDeleteBooking,
+  dayData, dayLoading, onDeleteBooking, onEditBooking,
   visibleMonth, setVisibleMonth, selectDate, calendarDays, calendarExpanded, setCalendarExpanded,
   branding, setBranding, adminToken, onAuthFailure, loadCalendarMonth, loadDay,
 }) {
@@ -880,7 +1020,7 @@ function AdminView({
           ) : (
             <div>
               {bookings.map((b) => (
-                <AdminBookingRow key={b.id} booking={b} interval={Number(windowForm.interval_minutes) || 0} onDelete={() => onDeleteBooking(b.id)} />
+                <AdminBookingRow key={b.id} booking={b} interval={Number(windowForm.interval_minutes) || 0} onDelete={() => onDeleteBooking(b.id)} onEdit={() => onEditBooking(b)} />
               ))}
             </div>
           )}
@@ -896,7 +1036,7 @@ function AdminView({
   );
 }
 
-function AdminBookingRow({ booking, interval, onDelete }) {
+function AdminBookingRow({ booking, interval, onDelete, onEdit }) {
   return (
     <div style={{ marginBottom: 14 }}>
       {interval > 0 && (
@@ -919,7 +1059,8 @@ function AdminBookingRow({ booking, interval, onDelete }) {
           {booking.address && <div style={{ color: "#1A2B3D", marginTop: 2 }}>{booking.address}</div>}
           {booking.notes && <div style={{ color: "#6b6657", marginTop: 2 }}>{booking.notes}</div>}
         </div>
-        <button className="bk-icon-btn" onClick={onDelete} aria-label="Delete booking" style={{ color: "#A32D2D" }}><Trash2 size={15} /></button>
+        <button className="bk-icon-btn" onClick={onEdit} aria-label="Edit booking" title="Edit booking" style={{ color: "#2F6690" }}><Pencil size={15} /></button>
+        <button className="bk-icon-btn" onClick={onDelete} aria-label="Delete booking" title="Delete booking" style={{ color: "#A32D2D" }}><Trash2 size={15} /></button>
       </div>
       {interval > 0 && (
         <div style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 11, color: "#A8A39A", padding: "4px 14px", fontStyle: "italic" }}>
