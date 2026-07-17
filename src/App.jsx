@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback, useRef } from "react";
 import {
   Plus, Trash2, ChevronLeft, ChevronRight, X, Check, Calendar as CalendarIcon,
-  Settings, User, Car, Clock, MapPin, LogOut, Share2, Copy, CheckCheck, Pencil, Search,
+  Settings, User, Car, Clock, MapPin, LogOut, Share2, Copy, CheckCheck, Pencil, Search, MessageSquare,
 } from "lucide-react";
 import { api, getStoredAdminToken, storeAdminToken, clearStoredAdminToken } from "./api";
 import {
@@ -1168,7 +1168,7 @@ function AdminView({
           ) : (
             <div>
               {bookings.map((b) => (
-                <AdminBookingRow key={b.id} booking={b} interval={Number(windowForm.interval_minutes) || 0} onDelete={() => onDeleteBooking(b.id)} onEdit={() => onEditBooking(b)} />
+                <AdminBookingRow key={b.id} booking={b} interval={Number(windowForm.interval_minutes) || 0} onDelete={() => onDeleteBooking(b.id)} onEdit={() => onEditBooking(b)} adminToken={adminToken} onReminderSent={loadDay} />
               ))}
             </div>
           )}
@@ -1178,13 +1178,35 @@ function AdminView({
       </div>
 
       <ReportsPanel adminToken={adminToken} onAuthFailure={onAuthFailure} branding={branding} />
+      <SmsSettingsPanel adminToken={adminToken} onAuthFailure={onAuthFailure} />
       <SecurityPanel adminToken={adminToken} onAuthFailure={onAuthFailure} />
       <BrandingPanel branding={branding} setBranding={setBranding} adminToken={adminToken} onAuthFailure={onAuthFailure} />
     </div>
   );
 }
 
-function AdminBookingRow({ booking, interval, onDelete, onEdit }) {
+function AdminBookingRow({ booking, interval, onDelete, onEdit, adminToken, onReminderSent }) {
+  const [sending, setSending] = useState(false);
+  const [sendStatus, setSendStatus] = useState("");
+
+  async function handleSendReminder() {
+    if (!booking.phone) {
+      setSendStatus("No phone number on this booking.");
+      return;
+    }
+    setSending(true);
+    setSendStatus("");
+    try {
+      await api.adminSendReminder(booking.id, adminToken);
+      setSendStatus("Reminder sent!");
+      if (onReminderSent) onReminderSent();
+    } catch (e) {
+      setSendStatus(e.message || "Failed to send.");
+    } finally {
+      setSending(false);
+    }
+  }
+
   return (
     <div style={{ marginBottom: 14 }}>
       {interval > 0 && (
@@ -1206,9 +1228,22 @@ function AdminBookingRow({ booking, interval, onDelete, onEdit }) {
           )}
           {booking.address && <div style={{ color: "#1A2B3D", marginTop: 2 }}>{booking.address}</div>}
           {booking.notes && <div style={{ color: "#6b6657", marginTop: 2 }}>{booking.notes}</div>}
+          {booking.reminder_sent && (
+            <div style={{ fontSize: 11, color: "#5C8A72", marginTop: 3, display: "flex", alignItems: "center", gap: 4 }}>
+              <Check size={11} /> Reminder sent
+            </div>
+          )}
+          {sendStatus && (
+            <div style={{ fontSize: 11, color: sendStatus.includes("sent") ? "#5C8A72" : "#A32D2D", marginTop: 3 }}>{sendStatus}</div>
+          )}
         </div>
-        <button className="bk-icon-btn" onClick={onEdit} aria-label="Edit booking" title="Edit booking" style={{ color: "#2F6690" }}><Pencil size={15} /></button>
-        <button className="bk-icon-btn" onClick={onDelete} aria-label="Delete booking" title="Delete booking" style={{ color: "#A32D2D" }}><Trash2 size={15} /></button>
+        <div style={{ display: "flex", flexDirection: "column", gap: 4, flexShrink: 0 }}>
+          <button className="bk-icon-btn" onClick={handleSendReminder} disabled={sending || !booking.phone} aria-label="Send SMS reminder" title={booking.phone ? "Send SMS reminder" : "No phone number"} style={{ color: booking.reminder_sent ? "#5C8A72" : "#2F6690", opacity: !booking.phone ? 0.4 : 1 }}>
+            <MessageSquare size={15} />
+          </button>
+          <button className="bk-icon-btn" onClick={onEdit} aria-label="Edit booking" title="Edit booking" style={{ color: "#2F6690" }}><Pencil size={15} /></button>
+          <button className="bk-icon-btn" onClick={onDelete} aria-label="Delete booking" title="Delete booking" style={{ color: "#A32D2D" }}><Trash2 size={15} /></button>
+        </div>
       </div>
       {interval > 0 && (
         <div style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 11, color: "#A8A39A", padding: "4px 14px", fontStyle: "italic" }}>
@@ -1682,6 +1717,143 @@ function ReportsPanel({ adminToken, onAuthFailure, branding }) {
 
       {previewRows && previewRows.length === 0 && !statusIsError && (
         <p style={{ fontSize: 13, color: "#8B8680", margin: "12px 0 0" }}>No bookings in this date range.</p>
+      )}
+    </div>
+  );
+}
+
+// ---------- SMS reminder settings panel ----------
+
+function SmsSettingsPanel({ adminToken, onAuthFailure }) {
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [status, setStatus] = useState("");
+  const [statusIsError, setStatusIsError] = useState(false);
+
+  const [enabled, setEnabled] = useState(false);
+  const [senderId, setSenderId] = useState("");
+  const [daysBeforeFirst, setDaysBeforeFirst] = useState(2);
+  const [daysBeforeSecond, setDaysBeforeSecond] = useState(1);
+  const [messageTemplate, setMessageTemplate] = useState(
+    "Hi {name}, this is a reminder that you have an appointment with {business} on {date} at {time}. Ref: {ref}"
+  );
+
+  useEffect(() => {
+    api.adminGetSmsSettings(adminToken)
+      .then((s) => {
+        setEnabled(s.enabled || false);
+        setSenderId(s.senderId || "");
+        setDaysBeforeFirst(s.daysBeforeFirst ?? 2);
+        setDaysBeforeSecond(s.daysBeforeSecond ?? 1);
+        setMessageTemplate(s.messageTemplate || messageTemplate);
+      })
+      .catch((e) => {
+        if (e.status === 401) onAuthFailure();
+      })
+      .finally(() => setLoading(false));
+  }, [adminToken]);
+
+  async function handleSave() {
+    setSaving(true);
+    setStatus("");
+    try {
+      await api.adminSaveSmsSettings(
+        { enabled, senderId, daysBeforeFirst, daysBeforeSecond, messageTemplate },
+        adminToken
+      );
+      setStatus("SMS settings saved.");
+      setStatusIsError(false);
+    } catch (e) {
+      if (e.status === 401) { onAuthFailure(); return; }
+      setStatus(e.message || "Couldn't save settings.");
+      setStatusIsError(true);
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  const TEMPLATE_VARS = ["{name}", "{business}", "{date}", "{time}", "{ref}"];
+
+  return (
+    <div style={{ background: "#fff", border: "1px solid #E3DECF", borderRadius: 12, padding: 16, marginTop: 24 }}>
+      <h3 style={{ margin: "0 0 4px", fontSize: 14, fontWeight: 700, color: "#6b6657", textTransform: "uppercase", letterSpacing: "0.04em" }}>SMS Reminders</h3>
+      <p style={{ fontSize: 12, color: "#8B8680", margin: "0 0 14px", lineHeight: 1.6 }}>
+        Automatically send SMS appointment reminders to customers via Twilio. Requires{" "}
+        <strong>TWILIO_ACCOUNT_SID</strong>, <strong>TWILIO_AUTH_TOKEN</strong>, and{" "}
+        <strong>CRON_SECRET</strong> to be set in your Render environment variables.
+        Point cron-job.org to <code style={{ background: "#F5F3EE", padding: "1px 5px", borderRadius: 4, fontSize: 11 }}>POST /api/cron/send-reminders</code>{" "}
+        with header <code style={{ background: "#F5F3EE", padding: "1px 5px", borderRadius: 4, fontSize: 11 }}>x-cron-secret: [your CRON_SECRET]</code>.
+      </p>
+
+      {loading ? (
+        <p style={{ fontSize: 13, color: "#8B8680" }}>Loading…</p>
+      ) : (
+        <>
+          {/* Enable toggle */}
+          <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 16, padding: "10px 14px", background: enabled ? "#E8F0EA" : "#F5F3EE", borderRadius: 8, border: `1px solid ${enabled ? "#B8D4BE" : "#E3DECF"}` }}>
+            <input type="checkbox" id="sms-enabled" checked={enabled} onChange={(e) => setEnabled(e.target.checked)}
+              style={{ width: 18, height: 18, cursor: "pointer", accentColor: "#5C8A72" }} />
+            <label htmlFor="sms-enabled" style={{ fontSize: 14, fontWeight: 600, cursor: "pointer", color: enabled ? "#3D7A52" : "#6b6657" }}>
+              {enabled ? "Automatic reminders are ON" : "Automatic reminders are OFF"}
+            </label>
+          </div>
+
+          {/* Sender ID */}
+          <label style={{ fontSize: 11, color: "#8B8680", display: "block", marginBottom: 4 }}>
+            Alphanumeric Sender ID <span style={{ color: "#C3BDB5" }}>(max 11 characters — appears as sender name on customer's phone)</span>
+          </label>
+          <input className="bk-input" value={senderId} onChange={(e) => setSenderId(e.target.value.slice(0, 11))}
+            placeholder="e.g. RiversideDet" style={{ marginBottom: 14 }} />
+
+          {/* Reminder timing */}
+          <div className="gen-row" style={{ display: "flex", gap: 10, marginBottom: 14, flexWrap: "wrap" }}>
+            <div style={{ flex: "1 1 0", minWidth: 120 }}>
+              <label style={{ fontSize: 11, color: "#8B8680", display: "block", marginBottom: 4 }}>First reminder (days before)</label>
+              <input type="number" min="1" max="14" className="bk-input" value={daysBeforeFirst}
+                onChange={(e) => setDaysBeforeFirst(Number(e.target.value))} />
+            </div>
+            <div style={{ flex: "1 1 0", minWidth: 120 }}>
+              <label style={{ fontSize: 11, color: "#8B8680", display: "block", marginBottom: 4 }}>Second reminder (days before, 0 = disabled)</label>
+              <input type="number" min="0" max="13" className="bk-input" value={daysBeforeSecond}
+                onChange={(e) => setDaysBeforeSecond(Number(e.target.value))} />
+            </div>
+          </div>
+
+          {/* Message template */}
+          <label style={{ fontSize: 11, color: "#8B8680", display: "block", marginBottom: 4 }}>
+            Message template
+          </label>
+          <textarea className="bk-input" value={messageTemplate}
+            onChange={(e) => setMessageTemplate(e.target.value)}
+            rows={3} style={{ resize: "vertical", marginBottom: 6, lineHeight: 1.5 }} />
+          <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginBottom: 14 }}>
+            {TEMPLATE_VARS.map((v) => (
+              <span key={v} onClick={() => setMessageTemplate((t) => t + v)}
+                style={{ fontSize: 11, background: "#F5F3EE", border: "1px solid #D7D2C5", borderRadius: 4, padding: "2px 7px", cursor: "pointer", fontFamily: "ui-monospace, SFMono-Regular, Menlo, monospace", color: "#E8702A" }}
+                title={`Insert ${v}`}>{v}</span>
+            ))}
+            <span style={{ fontSize: 11, color: "#A8A39A" }}>— tap to insert into template</span>
+          </div>
+
+          {/* Preview */}
+          <div style={{ background: "#F5F3EE", border: "1px solid #E3DECF", borderRadius: 8, padding: "10px 12px", marginBottom: 14 }}>
+            <div style={{ fontSize: 10, color: "#8B8680", textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: 4 }}>Message preview</div>
+            <div style={{ fontSize: 13, color: "#1A2B3D", lineHeight: 1.5 }}>
+              {messageTemplate
+                .replace("{name}", "Jane Smith")
+                .replace("{business}", "Riverside Detailing")
+                .replace("{date}", "2026-08-15")
+                .replace("{time}", "09:00")
+                .replace("{ref}", "AUG152691P-3P")}
+            </div>
+          </div>
+
+          {status && <p style={{ fontSize: 12, color: statusIsError ? "#A32D2D" : "#5C8A72", margin: "0 0 12px", fontWeight: 600 }}>{status}</p>}
+
+          <button className="bk-primary" onClick={handleSave} disabled={saving}>
+            {saving ? "Saving…" : "Save SMS settings"}
+          </button>
+        </>
       )}
     </div>
   );

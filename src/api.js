@@ -96,6 +96,12 @@ export const api = {
 
   adminSearchBookings: (query, token) =>
     request(`/api/admin/bookings/search?q=${encodeURIComponent(query)}`, { token }),
+
+  adminGetSmsSettings: (token) => request("/api/admin/sms-settings", { token }),
+  adminSaveSmsSettings: (settings, token) =>
+    request("/api/admin/sms-settings", { method: "PUT", body: settings, token }),
+  adminSendReminder: (bookingId, token) =>
+    request(`/api/admin/bookings/${bookingId}/send-reminder`, { method: "POST", token }),
 };
 
 export { ApiError };

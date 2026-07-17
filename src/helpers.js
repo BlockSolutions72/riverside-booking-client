@@ -1,11 +1,27 @@
-// helpers.js — pure formatting/date utilities, ported unchanged from the original artifact.
+export const MIN_BOOKING_LENGTH = 30;
 
-export function dateKey(d) {
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+export const SERVICES = {
+  detailing: { label: "Auto Cleaning & Detailing", color: "#2F6690" },
+};
+
+export function serviceFor(id) {
+  return SERVICES[id] || SERVICES.detailing;
 }
 
-export function formatDayLabel(d) {
-  return d.toLocaleDateString(undefined, { weekday: "long", month: "long", day: "numeric" });
+export function dateKey(date) {
+  const y = date.getFullYear();
+  const m = String(date.getMonth() + 1).padStart(2, "0");
+  const d = String(date.getDate()).padStart(2, "0");
+  return `${y}-${m}-${d}`;
+}
+
+export function formatDayLabel(date) {
+  return date.toLocaleDateString(undefined, { weekday: "long", month: "long", day: "numeric" });
+}
+
+export function toMinutes(hhmm) {
+  const [h, m] = hhmm.split(":").map(Number);
+  return h * 60 + m;
 }
 
 export function toHHMM(mins) {
@@ -15,26 +31,12 @@ export function toHHMM(mins) {
   return `${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}`;
 }
 
-export function toMinutes(hhmm) {
-  const [h, m] = hhmm.split(":").map(Number);
-  return h * 60 + m;
-}
-
 export function formatClock(hhmm) {
+  if (!hhmm) return "";
   const [h, m] = hhmm.split(":").map(Number);
   const period = h >= 12 ? "pm" : "am";
   const h12 = h % 12 === 0 ? 12 : h % 12;
   return m === 0 ? `${h12}${period}` : `${h12}:${String(m).padStart(2, "0")}${period}`;
-}
-
-export const MIN_BOOKING_LENGTH = 30;
-
-export const SERVICES = [
-  { id: "detailing", label: "Auto Cleaning & Detailing", color: "#2F6690" },
-];
-
-export function serviceFor(id) {
-  return SERVICES.find((s) => s.id === id) || SERVICES[0];
 }
 
 export function loadColor(fraction, blocked) {
